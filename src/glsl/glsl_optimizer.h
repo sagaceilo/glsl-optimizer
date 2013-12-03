@@ -2,6 +2,8 @@
 #ifndef GLSL_OPTIMIZER_H
 #define GLSL_OPTIMIZER_H
 
+#define EXPORT_API extern "C" __declspec(dllexport)
+
 /*
  Main GLSL optimizer interface.
  See ../../README.md for more instructions.
@@ -42,22 +44,22 @@ enum glslopt_target {
 	kGlslTargetOpenGLES30 = 2
 };
 
-glslopt_ctx* glslopt_initialize (glslopt_target target);
-void glslopt_cleanup (glslopt_ctx* ctx);
+EXPORT_API glslopt_ctx* glslopt_initialize (glslopt_target target);
+EXPORT_API void glslopt_cleanup (glslopt_ctx* ctx);
 
-glslopt_shader* glslopt_optimize (glslopt_ctx* ctx, glslopt_shader_type type, const char* shaderSource, unsigned options);
-bool glslopt_get_status (glslopt_shader* shader);
-const char* glslopt_get_output (glslopt_shader* shader);
-const char* glslopt_get_raw_output (glslopt_shader* shader);
-const char* glslopt_get_log (glslopt_shader* shader);
-void glslopt_shader_delete (glslopt_shader* shader);
+EXPORT_API glslopt_shader* glslopt_optimize (glslopt_ctx* ctx, glslopt_shader_type type, const char* shaderSource, unsigned options);
+EXPORT_API bool glslopt_get_status (glslopt_shader* shader);
+EXPORT_API const char* glslopt_get_output (glslopt_shader* shader);
+EXPORT_API const char* glslopt_get_raw_output (glslopt_shader* shader);
+EXPORT_API const char* glslopt_get_log (glslopt_shader* shader);
+EXPORT_API void glslopt_shader_delete (glslopt_shader* shader);
 
-int glslopt_shader_get_input_count (glslopt_shader* shader);
-const char* glslopt_shader_get_input_name (glslopt_shader* shader, int index);
+EXPORT_API int glslopt_shader_get_input_count (glslopt_shader* shader);
+EXPORT_API const char* glslopt_shader_get_input_name (glslopt_shader* shader, int index);
 
 // Get *very* approximate shader stats:
 // Number of math, texture and flow control instructions.
-void glslopt_shader_get_stats (glslopt_shader* shader, int* approxMath, int* approxTex, int* approxFlow);
+EXPORT_API void glslopt_shader_get_stats (glslopt_shader* shader, int* approxMath, int* approxTex, int* approxFlow);
 
 
 #endif /* GLSL_OPTIMIZER_H */
