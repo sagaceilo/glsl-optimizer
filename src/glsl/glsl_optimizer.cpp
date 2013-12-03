@@ -69,7 +69,7 @@ initialize_mesa_context(struct gl_context *ctx, glslopt_target api)
    ctx->Const.GeometryProgram.MaxTextureImageUnits = 16;
    ctx->Const.FragmentProgram.MaxUniformComponents = 64;
 
-   ctx->Const.MaxDrawBuffers = 2;
+   ctx->Const.MaxDrawBuffers = 3;
 
    ctx->Driver.NewShader = _mesa_new_shader;
    ctx->Driver.DeleteShader = DeleteShader;
