@@ -171,12 +171,12 @@ typedef enum
    VARYING_SLOT_CLIP_DIST1,
    VARYING_SLOT_PRIMITIVE_ID, /* Does not appear in VS */
    VARYING_SLOT_LAYER, /* Appears as VS or GS output */
+   VARYING_SLOT_VIEWPORT, /* Appears as VS or GS output */
    VARYING_SLOT_FACE, /* FS only */
    VARYING_SLOT_PNTC, /* FS only */
    VARYING_SLOT_VAR0, /* First generic varying slot */
    VARYING_SLOT_MAX = VARYING_SLOT_VAR0 + MAX_VARYING
 } gl_varying_slot;
-
 
 
 /**
@@ -201,6 +201,22 @@ typedef enum
 } gl_frag_result;
 
 
+/**
+ * Shader stages. Note that these will become 5 with tessellation.
+ *
+ * The order must match how shaders are ordered in the pipeline.
+ * The GLSL linker assumes that if i<j, then the j-th shader is
+ * executed later than the i-th shader.
+ */
+typedef enum
+{
+   MESA_SHADER_VERTEX = 0,
+   MESA_SHADER_GEOMETRY = 1,
+   MESA_SHADER_FRAGMENT = 2,
+} gl_shader_stage;
+
+#define MESA_SHADER_STAGES (MESA_SHADER_FRAGMENT + 1)
+
 
 
 /*********************************************/
@@ -217,38 +233,6 @@ typedef enum
 
 
 /**
- * Indexes for geometry program result attributes
- */
-typedef enum
-{
-   GEOM_RESULT_POS  = 0,
-   GEOM_RESULT_COL0  = 1,
-   GEOM_RESULT_COL1  = 2,
-   GEOM_RESULT_SCOL0 = 3,
-   GEOM_RESULT_SCOL1 = 4,
-   GEOM_RESULT_FOGC = 5,
-   GEOM_RESULT_TEX0 = 6,
-   GEOM_RESULT_TEX1 = 7,
-   GEOM_RESULT_TEX2 = 8,
-   GEOM_RESULT_TEX3 = 9,
-   GEOM_RESULT_TEX4 = 10,
-   GEOM_RESULT_TEX5 = 11,
-   GEOM_RESULT_TEX6 = 12,
-   GEOM_RESULT_TEX7 = 13,
-   GEOM_RESULT_PSIZ = 14,
-   GEOM_RESULT_CLPV = 15,
-   GEOM_RESULT_PRID = 16,
-   GEOM_RESULT_LAYR = 17,
-   GEOM_RESULT_VAR0 = 18,  /**< shader varying, should really be 16 */
-   /* ### we need to -2 because var0 is 18 instead 16 like in the others */
-   GEOM_RESULT_MAX  =  (GEOM_RESULT_VAR0 + MAX_VARYING - 2)
-} gl_geom_result;
-
-
-/**
- * Indexes for fragment program input attributes.  Note that
- * _mesa_vert_result_to_frag_attrib() and frag_attrib_to_vert_result() make
- * assumptions about the layout of this enum.
  */
 typedef enum
 {
@@ -391,12 +375,13 @@ typedef enum
  */
 typedef enum
 {
-   SYSTEM_VALUE_FRONT_FACE,  /**< Fragment shader only (not done yet) */
-   SYSTEM_VALUE_VERTEX_ID,   /**< Vertex shader only */
-   SYSTEM_VALUE_INSTANCE_ID, /**< Vertex shader only */
-   SYSTEM_VALUE_SAMPLE_ID,   /**< Fragment shader only */
-   SYSTEM_VALUE_SAMPLE_POS,  /**< Fragment shader only */
-   SYSTEM_VALUE_MAX          /**< Number of values */
+   SYSTEM_VALUE_FRONT_FACE,     /**< Fragment shader only (not done yet) */
+   SYSTEM_VALUE_VERTEX_ID,      /**< Vertex shader only */
+   SYSTEM_VALUE_INSTANCE_ID,    /**< Vertex shader only */
+   SYSTEM_VALUE_SAMPLE_ID,      /**< Fragment shader only */
+   SYSTEM_VALUE_SAMPLE_POS,     /**< Fragment shader only */
+   SYSTEM_VALUE_SAMPLE_MASK_IN, /**< Fragment shader only */
+   SYSTEM_VALUE_MAX             /**< Number of values */
 } gl_system_value;
 
 
@@ -507,6 +492,7 @@ struct gl_shader
     * Must be the first field.
     */
    GLenum Type;
+   gl_shader_stage Stage;
    GLuint Name;  /**< AKA the handle */
    GLchar *Label;   /**< GL_KHR_debug */
    GLint RefCount;  /**< Reference count */
@@ -589,23 +575,33 @@ struct gl_shader
         */
       GLenum OutputType;
    } Geom;
+
+   /**
+    * Map from image uniform index to image unit (set by glUniform1i())
+    *
+    * An image uniform index is associated with each image uniform by
+    * the linker.  The image index associated with each uniform is
+    * stored in the \c gl_uniform_storage::image field.
+    */
+   GLubyte ImageUnits[MAX_IMAGE_UNIFORMS];
+
+   /**
+    * Access qualifier specified in the shader for each image uniform
+    * index.  Either \c GL_READ_ONLY, \c GL_WRITE_ONLY or \c
+    * GL_READ_WRITE.
+    *
+    * It may be different, though only more strict than the value of
+    * \c gl_image_unit::Access for the corresponding image unit.
+    */
+   GLenum ImageAccess[MAX_IMAGE_UNIFORMS];
+
+   /**
+    * Number of image uniforms defined in the shader.  It specifies
+    * the number of valid elements in the \c ImageUnits and \c
+    * ImageAccess arrays above.
+    */
+   GLuint NumImages;
 };
-
-
-/**
- * Shader stages. Note that these will become 5 with tessellation.
- *
- * The order must match how shaders are ordered in the pipeline.
- * The GLSL linker assumes that if i<j, then the j-th shader is
- * executed later than the i-th shader.
- */
-typedef enum
-{
-   MESA_SHADER_VERTEX = 0,
-   MESA_SHADER_GEOMETRY = 1,
-   MESA_SHADER_FRAGMENT = 2,
-   MESA_SHADER_TYPES = 3
-} gl_shader_type;
 
 
 struct gl_uniform_buffer_variable
@@ -686,7 +682,7 @@ struct gl_active_atomic_buffer
    GLuint MinimumSize;
 
    /** Shader stages making use of it. */
-   GLboolean StageReferences[MESA_SHADER_TYPES];
+   GLboolean StageReferences[MESA_SHADER_STAGES];
 };
 
 
@@ -825,7 +821,7 @@ struct gl_shader_program
     * This is used to maintain the Binding values of the stage's UniformBlocks[]
     * and to answer the GL_UNIFORM_BLOCK_REFERENCED_BY_*_SHADER queries.
     */
-   int *UniformBlockStageIndex[MESA_SHADER_TYPES];
+   int *UniformBlockStageIndex[MESA_SHADER_STAGES];
 
    /**
     * Map of active uniform names to locations
@@ -855,7 +851,7 @@ struct gl_shader_program
     * \c MESA_SHADER_* defines.  Entries for non-existent stages will be
     * \c NULL.
     */
-   struct gl_shader *_LinkedShaders[MESA_SHADER_TYPES];
+   struct gl_shader *_LinkedShaders[MESA_SHADER_STAGES];
 };   
 
 
@@ -887,12 +883,15 @@ struct gl_shader_compiler_options
 
    GLuint MaxIfDepth;               /**< Maximum nested IF blocks */
    GLuint MaxUnrollIterations;
-
-   /**
-    * Prefer DP4 instructions (rather than MUL/MAD) for matrix * vector
-    * operations, such as position transformation.
-    */
-   GLboolean PreferDP4;
+	
+	/**
+	 * Optimize code for array of structures backends.
+	 *
+	 * This is a proxy for:
+	 *   - preferring DP4 instructions (rather than MUL/MAD) for
+	 *     matrix * vector operations, such as position transformation.
+	 */
+	GLboolean OptimizeForAOS;
 
    struct gl_sl_pragmas DefaultPragmas; /**< Default #pragma settings */
 };
@@ -956,9 +955,13 @@ struct gl_program_constants
    GLuint MaxUniformBlocks;
    GLuint MaxCombinedUniformComponents;
    GLuint MaxTextureImageUnits;
+
    /* GL_ARB_shader_atomic_counters */
    GLuint MaxAtomicBuffers;
    GLuint MaxAtomicCounters;
+
+   /* GL_ARB_shader_image_load_store */
+   GLuint MaxImageUniforms;
 };
 
 
@@ -1000,10 +1003,14 @@ struct gl_constants
    GLfloat MaxSpotExponent;                  /**< GL_NV_light_max_exponent */
 
    GLuint MaxViewportWidth, MaxViewportHeight;
+   GLuint MaxViewports;                      /**< GL_ARB_viewport_array */
+   GLuint ViewportSubpixelBits;              /**< GL_ARB_viewport_array */
+   struct {
+      GLfloat Min;
+      GLfloat Max;
+   } ViewportBounds;                         /**< GL_ARB_viewport_array */
 
-   struct gl_program_constants VertexProgram;   /**< GL_ARB_vertex_program */
-   struct gl_program_constants FragmentProgram; /**< GL_ARB_fragment_program */
-   struct gl_program_constants GeometryProgram;  /**< GL_ARB_geometry_shader4 */
+   struct gl_program_constants Program[MESA_SHADER_STAGES];
    GLuint MaxProgramMatrices;
    GLuint MaxProgramMatrixStackDepth;
 
@@ -1165,6 +1172,12 @@ struct gl_constants
    /** GL_ARB_vertex_attrib_binding */
    GLint MaxVertexAttribRelativeOffset;
    GLint MaxVertexAttribBindings;
+
+   /* GL_ARB_shader_image_load_store */
+   GLuint MaxImageUnits;
+   GLuint MaxCombinedImageUnitsAndFragmentOutputs;
+   GLuint MaxImageSamples;
+   GLuint MaxCombinedImageUniforms;
 };
 
 
@@ -1180,6 +1193,7 @@ struct gl_extensions
    GLboolean ANGLE_texture_compression_dxt;
    GLboolean ARB_ES2_compatibility;
    GLboolean ARB_ES3_compatibility;
+   GLboolean ARB_arrays_of_arrays;
    GLboolean ARB_base_instance;
    GLboolean ARB_blend_func_extended;
    GLboolean ARB_color_buffer_float;
@@ -1212,6 +1226,7 @@ struct gl_extensions
    GLboolean ARB_seamless_cube_map;
    GLboolean ARB_shader_atomic_counters;
    GLboolean ARB_shader_bit_encoding;
+   GLboolean ARB_shader_image_load_store;
    GLboolean ARB_shader_stencil_export;
    GLboolean ARB_shader_texture_lod;
    GLboolean ARB_shading_language_packing;
@@ -1237,6 +1252,7 @@ struct gl_extensions
    GLboolean ARB_texture_query_lod;
    GLboolean ARB_texture_rg;
    GLboolean ARB_texture_rgb10_a2ui;
+   GLboolean ARB_texture_view;
    GLboolean ARB_timer_query;
    GLboolean ARB_transform_feedback2;
    GLboolean ARB_transform_feedback3;
@@ -1246,6 +1262,7 @@ struct gl_extensions
    GLboolean ARB_vertex_shader;
    GLboolean ARB_vertex_type_10f_11f_11f_rev;
    GLboolean ARB_vertex_type_2_10_10_10_rev;
+   GLboolean ARB_viewport_array;
    GLboolean EXT_blend_color;
    GLboolean EXT_blend_equation_separate;
    GLboolean EXT_blend_func_separate;
@@ -1258,7 +1275,6 @@ struct gl_extensions
    GLboolean EXT_framebuffer_sRGB;
    GLboolean EXT_gpu_program_parameters;
    GLboolean EXT_gpu_shader4;
-   GLboolean EXT_packed_depth_stencil;
    GLboolean EXT_packed_float;
    GLboolean EXT_pixel_buffer_object;
    GLboolean EXT_point_parameters;
@@ -1288,6 +1304,7 @@ struct gl_extensions
    /* vendor extensions */
    GLboolean AMD_performance_monitor;
    GLboolean AMD_seamless_cubemap_per_texture;
+   GLboolean AMD_shader_trinary_minmax;
    GLboolean AMD_vertex_shader_layer;
    GLboolean APPLE_object_purgeable;
    GLboolean ATI_envmap_bumpmap;
@@ -1394,8 +1411,7 @@ struct gl_context
    GLuint Version;
    char *VersionString;
 
-
-   struct gl_shader_compiler_options ShaderCompilerOptions[MESA_SHADER_TYPES];
+   struct gl_shader_compiler_options ShaderCompilerOptions[MESA_SHADER_STAGES];
 
    GLenum ErrorValue;        /**< Last error code */
 };

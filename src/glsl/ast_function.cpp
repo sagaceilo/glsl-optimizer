@@ -127,24 +127,19 @@ static glsl_precision precision_for_call (const ir_function_signature* sig, exec
 	glsl_precision prec_params_first = glsl_precision_undefined;
 	int params_counter = 0;
 	
-	exec_list_iterator actual_iter = actual_parameters->iterator();
-	exec_list_iterator formal_iter = sig->parameters.iterator();
-	
-	while (actual_iter.has_next())
-	{
-		ir_rvalue *actual = (ir_rvalue *) actual_iter.get();
-		ir_variable *formal = (ir_variable *) formal_iter.get();
+	foreach_two_lists(formal_node, &sig->parameters,
+					  actual_node, actual_parameters) {
+		ir_rvalue *actual = (ir_rvalue *) actual_node;
+		ir_variable *formal = (ir_variable *) formal_node;
 		assert(actual != NULL);
 		assert(formal != NULL);
-		glsl_precision param_prec = (glsl_precision)formal->precision;
+		glsl_precision param_prec = (glsl_precision)formal->data.precision;
 		if (param_prec == glsl_precision_undefined)
 			param_prec = actual->get_precision();
 		prec_params_max = higher_precision (prec_params_max, param_prec);
 		if (params_counter == 0)
 			prec_params_first = param_prec;
 		
-		actual_iter.next();
-		formal_iter.next();
 		++params_counter;
 	}
 	
@@ -182,7 +177,7 @@ verify_parameter_modes(_mesa_glsl_parse_state *state,
       YYLTYPE loc = actual_ast->get_location();
 
       /* Verify that 'const_in' parameters are ir_constants. */
-      if (formal->mode == ir_var_const_in &&
+      if (formal->data.mode == ir_var_const_in &&
 	  actual->ir_type != ir_type_constant) {
 	 _mesa_glsl_error(&loc, state,
 			  "parameter `in %s' must be a constant expression",
@@ -191,10 +186,10 @@ verify_parameter_modes(_mesa_glsl_parse_state *state,
       }
 
       /* Verify that 'out' and 'inout' actual parameters are lvalues. */
-      if (formal->mode == ir_var_function_out
-          || formal->mode == ir_var_function_inout) {
+      if (formal->data.mode == ir_var_function_out
+          || formal->data.mode == ir_var_function_inout) {
 	 const char *mode = NULL;
-	 switch (formal->mode) {
+	 switch (formal->data.mode) {
 	 case ir_var_function_out:   mode = "out";   break;
 	 case ir_var_function_inout: mode = "inout"; break;
 	 default:                    assert(false);  break;
@@ -214,9 +209,9 @@ verify_parameter_modes(_mesa_glsl_parse_state *state,
 
 	 ir_variable *var = actual->variable_referenced();
 	 if (var)
-	    var->assigned = true;
+	    var->data.assigned = true;
 
-	 if (var && var->read_only) {
+	 if (var && var->data.read_only) {
 	    _mesa_glsl_error(&loc, state,
 			     "function parameter '%s %s' references the "
 			     "read-only variable '%s'",
@@ -352,18 +347,13 @@ generate_call(exec_list *instructions, ir_function_signature *sig,
     * call takes place.  Since we haven't emitted the call yet, we'll place
     * the post-call conversions in a temporary exec_list, and emit them later.
     */
-   exec_list_iterator actual_iter = actual_parameters->iterator();
-   exec_list_iterator formal_iter = sig->parameters.iterator();
-
-   while (actual_iter.has_next()) {
-      ir_rvalue *actual = (ir_rvalue *) actual_iter.get();
-      ir_variable *formal = (ir_variable *) formal_iter.get();
-
-      assert(actual != NULL);
-      assert(formal != NULL);
+   foreach_two_lists(formal_node, &sig->parameters,
+                     actual_node, actual_parameters) {
+      ir_rvalue *actual = (ir_rvalue *) actual_node;
+      ir_variable *formal = (ir_variable *) formal_node;
 
       if (formal->type->is_numeric() || formal->type->is_boolean()) {
-	 switch (formal->mode) {
+	 switch (formal->data.mode) {
 	 case ir_var_const_in:
 	 case ir_var_function_in: {
 	    ir_rvalue *converted
@@ -375,7 +365,7 @@ generate_call(exec_list *instructions, ir_function_signature *sig,
 	 case ir_var_function_inout:
             fix_parameter(ctx, actual, formal->type,
                           instructions, &post_call_conversions,
-                          formal->mode == ir_var_function_inout,
+                          formal->data.mode == ir_var_function_inout,
 						  precision_for_call(sig,actual_parameters));
 	    break;
 	 default:
@@ -383,9 +373,6 @@ generate_call(exec_list *instructions, ir_function_signature *sig,
 	    break;
 	 }
       }
-
-      actual_iter.next();
-      formal_iter.next();
    }
 
    /* If the function call is a constant expression, don't generate any
@@ -510,17 +497,24 @@ no_matching_function_error(const char *name,
 			   exec_list *actual_parameters,
 			   _mesa_glsl_parse_state *state)
 {
-   char *str = prototype_string(NULL, name, actual_parameters);
-   _mesa_glsl_error(loc, state,
-                    "no matching function for call to `%s'; candidates are:",
-                    str);
-   ralloc_free(str);
+   gl_shader *sh = _mesa_glsl_get_builtin_function_shader();
 
-   print_function_prototypes(state, loc, state->symbols->get_function(name));
+   if (state->symbols->get_function(name) == NULL
+      && (!state->uses_builtin_functions
+          || sh->symbols->get_function(name) == NULL)) {
+      _mesa_glsl_error(loc, state, "no function with name '%s'", name);
+   } else {
+      char *str = prototype_string(NULL, name, actual_parameters);
+      _mesa_glsl_error(loc, state,
+                       "no matching function for call to `%s'; candidates are:",
+                       str);
+      ralloc_free(str);
 
-   if (state->uses_builtin_functions) {
-      gl_shader *sh = _mesa_glsl_get_builtin_function_shader();
-      print_function_prototypes(state, loc, sh->symbols->get_function(name));
+      print_function_prototypes(state, loc, state->symbols->get_function(name));
+
+      if (state->uses_builtin_functions) {
+         print_function_prototypes(state, loc, sh->symbols->get_function(name));
+      }
    }
 }
 
@@ -955,7 +949,7 @@ emit_inline_vector_constructor(const glsl_type *type, unsigned ast_precision,
       ir_rvalue *first_param = (ir_rvalue *)parameters->head;
       ir_rvalue *rhs = new(ctx) ir_swizzle(first_param, 0, 0, 0, 0,
 					   lhs_components);
-      var->precision = higher_precision ((glsl_precision)var->precision, rhs->get_precision());
+      var->data.precision = higher_precision ((glsl_precision)var->data.precision, rhs->get_precision());
       ir_dereference_variable *lhs = new(ctx) ir_dereference_variable(var);
       const unsigned mask = (1U << lhs_components) - 1;
 
@@ -973,7 +967,7 @@ emit_inline_vector_constructor(const glsl_type *type, unsigned ast_precision,
 
       foreach_list(node, parameters) {
 	 ir_rvalue *param = (ir_rvalue *) node;
-	 var->precision = higher_precision ((glsl_precision)var->precision, param->get_precision());
+	 var->data.precision = higher_precision ((glsl_precision)var->data.precision, param->get_precision());
 	 unsigned rhs_components = param->type->components();
 
 	 /* Do not try to assign more components to the vector than it has!
@@ -1718,7 +1712,7 @@ ast_function_expression::hir(exec_list *instructions,
    } else {
       const ast_expression *id = subexpressions[0];
       const char *func_name = id->primary_expression.identifier;
-      YYLTYPE loc = id->get_location();
+      YYLTYPE loc = get_location();
       exec_list actual_parameters;
 
       process_parameters(instructions, &actual_parameters, &this->expressions,
@@ -1750,14 +1744,12 @@ ast_aggregate_initializer::hir(exec_list *instructions,
 {
    void *ctx = state;
    YYLTYPE loc = this->get_location();
-   const char *name;
 
    if (!this->constructor_type) {
       _mesa_glsl_error(&loc, state, "type of C-style initializer unknown");
       return ir_rvalue::error_value(ctx);
    }
-   const glsl_type *const constructor_type =
-      this->constructor_type->glsl_type(&name, state);
+   const glsl_type *const constructor_type = this->constructor_type;
 
    if (!state->ARB_shading_language_420pack_enable) {
       _mesa_glsl_error(&loc, state, "C-style initialization requires the "
@@ -1765,12 +1757,12 @@ ast_aggregate_initializer::hir(exec_list *instructions,
       return ir_rvalue::error_value(ctx);
    }
 
-   if (this->constructor_type->is_array) {
+   if (constructor_type->is_array()) {
       return process_array_constructor(instructions, constructor_type, &loc,
                                        &this->expressions, state);
    }
 
-   if (this->constructor_type->structure) {
+   if (constructor_type->is_record()) {
       return process_record_constructor(instructions, constructor_type, &loc,
                                         &this->expressions, state);
    }

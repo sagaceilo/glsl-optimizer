@@ -77,7 +77,7 @@ always_available(const _mesa_glsl_parse_state *state)
 static bool
 compatibility_vs_only(const _mesa_glsl_parse_state *state)
 {
-   return state->target == vertex_shader &&
+   return state->stage == MESA_SHADER_VERTEX &&
           state->language_version <= 130 &&
           !state->es_shader;
 }
@@ -85,13 +85,13 @@ compatibility_vs_only(const _mesa_glsl_parse_state *state)
 static bool
 fs_only(const _mesa_glsl_parse_state *state)
 {
-   return state->target == fragment_shader;
+   return state->stage == MESA_SHADER_FRAGMENT;
 }
 
 static bool
 gs_only(const _mesa_glsl_parse_state *state)
 {
-   return state->target == geometry_shader;
+   return state->stage == MESA_SHADER_GEOMETRY;
 }
 
 static bool
@@ -103,7 +103,7 @@ v110(const _mesa_glsl_parse_state *state)
 static bool
 v110_fs_only(const _mesa_glsl_parse_state *state)
 {
-   return !state->es_shader && state->target == fragment_shader;
+   return !state->es_shader && state->stage == MESA_SHADER_FRAGMENT;
 }
 
 static bool
@@ -122,7 +122,7 @@ static bool
 v130_fs_only(const _mesa_glsl_parse_state *state)
 {
    return state->is_version(130, 300) &&
-          state->target == fragment_shader;
+          state->stage == MESA_SHADER_FRAGMENT;
 }
 
 static bool
@@ -155,7 +155,7 @@ lod_exists_in_stage(const _mesa_glsl_parse_state *state)
     * Since ARB_shader_texture_lod can only be enabled on desktop GLSL, we
     * don't need to explicitly check state->es_shader.
     */
-   return state->target == vertex_shader ||
+   return state->stage == MESA_SHADER_VERTEX ||
           state->is_version(130, 300) ||
           state->ARB_shader_texture_lod_enable;
 }
@@ -168,7 +168,7 @@ es_lod_exists_in_stage(const _mesa_glsl_parse_state *state)
 	 * is enabled.
 	 */
 	return
-		state->target == fragment_shader &&
+		state->stage == MESA_SHADER_FRAGMENT &&
 		state->es_shader &&
 		state->is_version(110, 100) &&
 		state->EXT_shader_texture_lod_enable;
@@ -249,7 +249,7 @@ texture_array_lod(const _mesa_glsl_parse_state *state)
 static bool
 fs_texture_array(const _mesa_glsl_parse_state *state)
 {
-   return state->target == fragment_shader &&
+   return state->stage == MESA_SHADER_FRAGMENT &&
           state->EXT_texture_array_enable;
 }
 
@@ -269,7 +269,7 @@ texture_multisample(const _mesa_glsl_parse_state *state)
 static bool
 fs_texture_cube_map_array(const _mesa_glsl_parse_state *state)
 {
-   return state->target == fragment_shader &&
+   return state->stage == MESA_SHADER_FRAGMENT &&
           (state->is_version(400, 0) ||
            state->ARB_texture_cube_map_array_enable);
 }
@@ -291,7 +291,7 @@ texture_query_levels(const _mesa_glsl_parse_state *state)
 static bool
 texture_query_lod(const _mesa_glsl_parse_state *state)
 {
-   return state->target == fragment_shader &&
+   return state->stage == MESA_SHADER_FRAGMENT &&
           state->ARB_texture_query_lod_enable;
 }
 
@@ -318,7 +318,7 @@ texture_gather_only(const _mesa_glsl_parse_state *state)
 static bool
 fs_oes_derivatives(const _mesa_glsl_parse_state *state)
 {
-   return state->target == fragment_shader &&
+   return state->stage == MESA_SHADER_FRAGMENT &&
           (state->is_version(110, 300) ||
            state->OES_standard_derivatives_enable);
 }
@@ -344,7 +344,7 @@ tex3d(const _mesa_glsl_parse_state *state)
 static bool
 fs_tex3d(const _mesa_glsl_parse_state *state)
 {
-   return state->target == fragment_shader &&
+   return state->stage == MESA_SHADER_FRAGMENT &&
           (!state->es_shader || state->OES_texture_3D_enable);
 }
 
@@ -358,6 +358,12 @@ static bool
 shader_atomic_counters(const _mesa_glsl_parse_state *state)
 {
    return state->ARB_shader_atomic_counters_enable;
+}
+
+static bool
+shader_trinary_minmax(const _mesa_glsl_parse_state *state)
+{
+   return state->AMD_shader_trinary_minmax_enable;
 }
 
 /** @} */
@@ -595,6 +601,10 @@ private:
    ir_function_signature *_atomic_intrinsic(builtin_available_predicate avail);
    ir_function_signature *_atomic_op(const char *intrinsic,
                                      builtin_available_predicate avail);
+
+   B1(min3)
+   B1(max3)
+   B1(mid3)
 
 #undef B0
 #undef B1
@@ -2160,6 +2170,57 @@ builtin_builder::create_builtins()
                            shader_atomic_counters),
                 NULL);
 
+   add_function("min3",
+                _min3(glsl_type::float_type),
+                _min3(glsl_type::vec2_type),
+                _min3(glsl_type::vec3_type),
+                _min3(glsl_type::vec4_type),
+
+                _min3(glsl_type::int_type),
+                _min3(glsl_type::ivec2_type),
+                _min3(glsl_type::ivec3_type),
+                _min3(glsl_type::ivec4_type),
+
+                _min3(glsl_type::uint_type),
+                _min3(glsl_type::uvec2_type),
+                _min3(glsl_type::uvec3_type),
+                _min3(glsl_type::uvec4_type),
+                NULL);
+
+   add_function("max3",
+                _max3(glsl_type::float_type),
+                _max3(glsl_type::vec2_type),
+                _max3(glsl_type::vec3_type),
+                _max3(glsl_type::vec4_type),
+
+                _max3(glsl_type::int_type),
+                _max3(glsl_type::ivec2_type),
+                _max3(glsl_type::ivec3_type),
+                _max3(glsl_type::ivec4_type),
+
+                _max3(glsl_type::uint_type),
+                _max3(glsl_type::uvec2_type),
+                _max3(glsl_type::uvec3_type),
+                _max3(glsl_type::uvec4_type),
+                NULL);
+
+   add_function("mid3",
+                _mid3(glsl_type::float_type),
+                _mid3(glsl_type::vec2_type),
+                _mid3(glsl_type::vec3_type),
+                _mid3(glsl_type::vec4_type),
+
+                _mid3(glsl_type::int_type),
+                _mid3(glsl_type::ivec2_type),
+                _mid3(glsl_type::ivec3_type),
+                _mid3(glsl_type::ivec4_type),
+
+                _mid3(glsl_type::uint_type),
+                _mid3(glsl_type::uvec2_type),
+                _mid3(glsl_type::uvec3_type),
+                _mid3(glsl_type::uvec4_type),
+                NULL);
+
 #undef F
 #undef FI
 #undef FIU
@@ -2380,8 +2441,8 @@ builtin_builder::call(ir_function *f, ir_variable *ret, exec_list params)
 {
    exec_list actual_params;
 
-   foreach_iter(exec_list_iterator, it, params) {
-      ir_variable *var = ((ir_instruction *)it.get())->as_variable();
+   foreach_list(node, &params) {
+      ir_variable *var = (ir_variable *) node;
       actual_params.push_tail(var_ref(var));
    }
 
@@ -3921,7 +3982,7 @@ builtin_builder::_fma(const glsl_type *type)
    ir_variable *c = in_var(type, "c");
    MAKE_SIG(type, gpu_shader5, 3, a, b, c);
 
-   body.emit(ret(fma(a, b, c)));
+   body.emit(ret(ir_builder::fma(a, b, c)));
 
    return sig;
 }
@@ -4045,6 +4106,48 @@ builtin_builder::_atomic_op(const char *intrinsic,
    body.emit(call(shader->symbols->get_function(intrinsic), retval,
                   sig->parameters));
    body.emit(ret(retval));
+   return sig;
+}
+
+ir_function_signature *
+builtin_builder::_min3(const glsl_type *type)
+{
+   ir_variable *x = in_var(type, "x");
+   ir_variable *y = in_var(type, "y");
+   ir_variable *z = in_var(type, "z");
+   MAKE_SIG(type, shader_trinary_minmax, 3, x, y, z);
+
+   ir_expression *min3 = min2(x, min2(y,z));
+   body.emit(ret(min3));
+
+   return sig;
+}
+
+ir_function_signature *
+builtin_builder::_max3(const glsl_type *type)
+{
+   ir_variable *x = in_var(type, "x");
+   ir_variable *y = in_var(type, "y");
+   ir_variable *z = in_var(type, "z");
+   MAKE_SIG(type, shader_trinary_minmax, 3, x, y, z);
+
+   ir_expression *max3 = max2(x, max2(y,z));
+   body.emit(ret(max3));
+
+   return sig;
+}
+
+ir_function_signature *
+builtin_builder::_mid3(const glsl_type *type)
+{
+   ir_variable *x = in_var(type, "x");
+   ir_variable *y = in_var(type, "y");
+   ir_variable *z = in_var(type, "z");
+   MAKE_SIG(type, shader_trinary_minmax, 3, x, y, z);
+
+   ir_expression *mid3 = max2(min2(x, y), max2(min2(x, z), min2(y, z)));
+   body.emit(ret(mid3));
+
    return sig;
 }
 

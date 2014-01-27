@@ -9,6 +9,7 @@
 #include "loop_analysis.h"
 #include "program.h"
 #include "linker.h"
+#include "standalone_scaffolding.h"
 
 
 extern "C" struct gl_shader *
@@ -23,51 +24,45 @@ static void DeleteShader(struct gl_context *ctx, struct gl_shader *shader)
 static void
 initialize_mesa_context(struct gl_context *ctx, glslopt_target api)
 {
-   memset(ctx, 0, sizeof(*ctx));
+	gl_api mesaAPI;
+	switch(api)
+	{
+		default:
+		case kGlslTargetOpenGL:
+			mesaAPI = API_OPENGL_COMPAT;
+			break;
+		case kGlslTargetOpenGLES20:
+			mesaAPI = API_OPENGLES2;
+			break;
+		case kGlslTargetOpenGLES30:
+			mesaAPI = API_OPENGL_CORE;
+			break;
+	}
+	initialize_context_to_defaults (ctx, mesaAPI);
 
 	switch(api)
 	{
 	default:
 	case kGlslTargetOpenGL:
-		ctx->API = API_OPENGL_COMPAT;
 		ctx->Const.GLSLVersion = 140;
 		break;
 	case kGlslTargetOpenGLES20:
-		ctx->API = API_OPENGLES2;
-		ctx->Const.GLSLVersion = 110;
-		ctx->Extensions.OES_standard_derivatives = GL_TRUE;
-		ctx->Extensions.EXT_shadow_samplers = GL_TRUE;
-		ctx->Extensions.EXT_frag_depth = GL_TRUE;
+		ctx->Extensions.OES_standard_derivatives = true;
+		ctx->Extensions.EXT_shadow_samplers = true;
+		ctx->Extensions.EXT_frag_depth = true;
 		break;
 	case kGlslTargetOpenGLES30:
-		ctx->API = API_OPENGL_CORE;
-		ctx->Const.GLSLVersion = 300;
 		ctx->Extensions.ARB_ES3_compatibility = true;
 		break;
 	}
 	
 
-   ctx->Extensions.ARB_fragment_coord_conventions = GL_TRUE;
-   ctx->Extensions.EXT_texture_array = GL_TRUE;
-   ctx->Extensions.NV_texture_rectangle = GL_TRUE;
-   ctx->Extensions.ARB_shader_texture_lod = GL_TRUE;
-
-   /* 1.20 minimums. */
-   ctx->Const.MaxLights = 8;
-   ctx->Const.MaxClipPlanes = 8;
-   ctx->Const.MaxTextureUnits = 2;
-
-   /* allow high amount */
+   // allow high amount of texcoords
    ctx->Const.MaxTextureCoordUnits = 16;
 
-   ctx->Const.VertexProgram.MaxAttribs = 16;
-   ctx->Const.VertexProgram.MaxUniformComponents = 512;
-   ctx->Const.MaxVarying = 8;
-   ctx->Const.MaxCombinedTextureImageUnits = 2;
-   ctx->Const.VertexProgram.MaxTextureImageUnits = 16;
-   ctx->Const.FragmentProgram.MaxTextureImageUnits = 16;
-   ctx->Const.GeometryProgram.MaxTextureImageUnits = 16;
-   ctx->Const.FragmentProgram.MaxUniformComponents = 64;
+   ctx->Const.Program[MESA_SHADER_VERTEX].MaxTextureImageUnits = 16;
+   ctx->Const.Program[MESA_SHADER_FRAGMENT].MaxTextureImageUnits = 16;
+   ctx->Const.Program[MESA_SHADER_GEOMETRY].MaxTextureImageUnits = 16;
 
    ctx->Const.MaxDrawBuffers = 3;
 
@@ -145,7 +140,7 @@ struct glslopt_shader
 	
 	~glslopt_shader()
 	{
-		for (unsigned i = 0; i < MESA_SHADER_TYPES; i++)
+		for (unsigned i = 0; i < MESA_SHADER_STAGES; i++)
 			ralloc_free(whole_program->_LinkedShaders[i]);
 		ralloc_free(whole_program);
 		ralloc_free(rawOutput);
@@ -181,9 +176,9 @@ static void propagate_precision_deref(ir_instruction *ir, void *data)
 {
 	// variable -> deference
 	ir_dereference_variable* der = ir->as_dereference_variable();
-	if (der && der->get_precision() == glsl_precision_undefined && der->var->precision != glsl_precision_undefined)
+	if (der && der->get_precision() == glsl_precision_undefined && der->var->data.precision != glsl_precision_undefined)
 	{
-		der->set_precision ((glsl_precision)der->var->precision);
+		der->set_precision ((glsl_precision)der->var->data.precision);
 		*(bool*)data = true;
 	}
 	// swizzle value -> swizzle
@@ -233,7 +228,7 @@ static void propagate_precision_assign(ir_instruction *ir, void *data)
 		if (lp == glsl_precision_undefined)
 		{		
 			if (lhs_var)
-				lhs_var->precision = rp;
+				lhs_var->data.precision = rp;
 			ass->lhs->set_precision (rp);
 			*(bool*)data = true;
 		}
@@ -250,19 +245,16 @@ static void propagate_precision_call(ir_instruction *ir, void *data)
 	if (call->return_deref->get_precision() == glsl_precision_undefined /*&& call->callee->precision == glsl_precision_undefined*/)
 	{
 		glsl_precision prec_params_max = glsl_precision_undefined;
-		exec_list_iterator iter_sig  = call->callee->parameters.iterator();
-		foreach_iter(exec_list_iterator, iter_param, call->actual_parameters)
-		{
-			ir_variable* sig_param = (ir_variable*)iter_sig.get();
-			ir_rvalue* param = (ir_rvalue*)iter_param.get();
+		foreach_two_lists(formal_node, &call->callee->parameters,
+						  actual_node, &call->actual_parameters) {
+			ir_variable* sig_param = (ir_variable*)formal_node;
+			ir_rvalue* param = (ir_rvalue*)actual_node;
 			
-			glsl_precision p = (glsl_precision)sig_param->precision;
+			glsl_precision p = (glsl_precision)sig_param->data.precision;
 			if (p == glsl_precision_undefined)
 				p = param->get_precision();
 			
 			prec_params_max = higher_precision (prec_params_max, p);
-			
-			iter_sig.next();
 		}
 		if (call->return_deref->get_precision() != prec_params_max)
 		{
@@ -279,8 +271,8 @@ static bool propagate_precision(exec_list* list)
 	bool res;
 	do {
 		res = false;
-		foreach_iter(exec_list_iterator, iter, *list) {
-			ir_instruction* ir = (ir_instruction*)iter.get();
+		foreach_list(node, list) {
+			ir_instruction* ir = (ir_instruction*)node;
 			visit_tree (ir, propagate_precision_deref, &res);
 			visit_tree (ir, propagate_precision_assign, &res);
 			visit_tree (ir, propagate_precision_call, &res);
@@ -353,7 +345,7 @@ static void find_shader_inputs(glslopt_shader* sh, exec_list* ir)
 	foreach_list(node, ir)
 	{
 		ir_variable* const var = ((ir_instruction *)node)->as_variable();
-		if (var == NULL || var->mode != ir_var_shader_in)
+		if (var == NULL || var->data.mode != ir_var_shader_in)
 			continue;
 
 		if (sh->inputCount >= glslopt_shader::kMaxShaderInputs)
@@ -371,8 +363,16 @@ glslopt_shader* glslopt_optimize (glslopt_ctx* ctx, glslopt_shader_type type, co
 
 	PrintGlslMode printMode = kPrintGlslVertex;
 	switch (type) {
-	case kGlslOptShaderVertex: shader->shader->Type = GL_VERTEX_SHADER; printMode = kPrintGlslVertex; break;
-	case kGlslOptShaderFragment: shader->shader->Type = GL_FRAGMENT_SHADER; printMode = kPrintGlslFragment; break;
+	case kGlslOptShaderVertex:
+			shader->shader->Type = GL_VERTEX_SHADER;
+			shader->shader->Stage = MESA_SHADER_VERTEX;
+			printMode = kPrintGlslVertex;
+			break;
+	case kGlslOptShaderFragment:
+			shader->shader->Type = GL_FRAGMENT_SHADER;
+			shader->shader->Stage = MESA_SHADER_FRAGMENT;
+			printMode = kPrintGlslFragment;
+			break;
 	}
 	if (!shader->shader->Type)
 	{
@@ -381,7 +381,7 @@ glslopt_shader* glslopt_optimize (glslopt_ctx* ctx, glslopt_shader_type type, co
 		return shader;
 	}
 	
-	_mesa_glsl_parse_state* state = new (shader) _mesa_glsl_parse_state (&ctx->mesa_ctx, shader->shader->Type, shader);
+	_mesa_glsl_parse_state* state = new (shader) _mesa_glsl_parse_state (&ctx->mesa_ctx, shader->shader->Stage, shader);
 	state->error = 0;
 
 	if (!(options & kGlslOptionSkipPreprocessor))
