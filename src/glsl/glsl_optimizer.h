@@ -47,6 +47,8 @@ enum glslopt_target {
 EXPORT_API glslopt_ctx* glslopt_initialize (glslopt_target target);
 EXPORT_API void glslopt_cleanup (glslopt_ctx* ctx);
 
+EXPORT_API void glslopt_set_max_unroll_iterations (glslopt_ctx* ctx, unsigned iterations);
+
 EXPORT_API glslopt_shader* glslopt_optimize (glslopt_ctx* ctx, glslopt_shader_type type, const char* shaderSource, unsigned options);
 EXPORT_API bool glslopt_get_status (glslopt_shader* shader);
 EXPORT_API const char* glslopt_get_output (glslopt_shader* shader);
