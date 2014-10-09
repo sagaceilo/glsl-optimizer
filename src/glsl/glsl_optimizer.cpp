@@ -66,7 +66,8 @@ initialize_mesa_context(struct gl_context *ctx, glslopt_target api)
    ctx->Const.Program[MESA_SHADER_FRAGMENT].MaxTextureImageUnits = 16;
    ctx->Const.Program[MESA_SHADER_GEOMETRY].MaxTextureImageUnits = 16;
 
-   ctx->Const.MaxDrawBuffers = (api == kGlslTargetOpenGLES20) ? 1 : 4;
+   // For GLES2.0 this would be 1, but we do support GL_EXT_draw_buffers
+   ctx->Const.MaxDrawBuffers = 4;
 
    ctx->Driver.NewShader = _mesa_new_shader;
    ctx->Driver.DeleteShader = DeleteShader;
@@ -436,7 +437,7 @@ glslopt_shader* glslopt_optimize (glslopt_ctx* ctx, glslopt_shader_type type, co
 	
 	struct gl_shader* linked_shader = NULL;
 
-	if (!state->error && !ir->is_empty())
+	if (!state->error && !ir->is_empty() && !(options & kGlslOptionNotFullShader))
 	{
 		linked_shader = link_intrastage_shaders(shader,
 												&ctx->mesa_ctx,

@@ -203,13 +203,14 @@ static bool CheckGLSL (bool vertex, bool gles, const std::string& testName, cons
 	if (source.find("#version 140") != std::string::npos)
 		return true;
 	#endif
+
+	const bool need3 =
+		(source.find("#version 150") != std::string::npos) ||
+		(source.find("#version 300") != std::string::npos);
 	
 #	ifdef __APPLE__
 	// Mac core context does not accept any older shader versions, so need to switch to
 	// either legacy context or core one.
-	const bool need3 =
-		(source.find("#version 150") != std::string::npos) ||
-		(source.find("#version 300") != std::string::npos);
 	if (need3)
 	{
 		if (!s_GL3Active)
@@ -254,6 +255,8 @@ static bool CheckGLSL (bool vertex, bool gles, const std::string& testName, cons
 		replace_string (src, "#extension GL_OES_standard_derivatives : enable", "", 0);
 		replace_string (src, "#extension GL_EXT_shadow_samplers : enable", "", 0);
 		replace_string (src, "#extension GL_EXT_frag_depth : enable", "", 0);
+		replace_string (src, "#extension GL_EXT_draw_buffers : enable", "", 0);
+		replace_string (src, "#extension GL_EXT_draw_buffers : require", "", 0);
 		replace_string (src, "precision ", "// precision ", 0);
 		replace_string (src, "#version 300 es", "", 0);
 	}
