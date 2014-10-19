@@ -41,7 +41,26 @@ enum glslopt_options {
 enum glslopt_target {
 	kGlslTargetOpenGL = 0,
 	kGlslTargetOpenGLES20 = 1,
-	kGlslTargetOpenGLES30 = 2
+	kGlslTargetOpenGLES30 = 2,
+	kGlslTargetMetal = 3,
+};
+
+// Type info
+enum glslopt_basic_type {
+	kGlslTypeFloat = 0,
+	kGlslTypeInt,
+	kGlslTypeBool,
+	kGlslTypeTex2D,
+	kGlslTypeTex3D,
+	kGlslTypeTexCube,
+	kGlslTypeOther,
+	kGlslTypeCount
+};
+enum glslopt_precision {
+	kGlslPrecHigh = 0,
+	kGlslPrecMedium,
+	kGlslPrecLow,
+	kGlslPrecCount
 };
 
 EXPORT_API glslopt_ctx* glslopt_initialize (glslopt_target target);
@@ -55,9 +74,13 @@ EXPORT_API const char* glslopt_get_output (glslopt_shader* shader);
 EXPORT_API const char* glslopt_get_raw_output (glslopt_shader* shader);
 EXPORT_API const char* glslopt_get_log (glslopt_shader* shader);
 EXPORT_API void glslopt_shader_delete (glslopt_shader* shader);
-
 EXPORT_API int glslopt_shader_get_input_count (glslopt_shader* shader);
-EXPORT_API const char* glslopt_shader_get_input_name (glslopt_shader* shader, int index);
+EXPORT_API void glslopt_shader_get_input_desc (glslopt_shader* shader, int index, const char** outName, glslopt_basic_type* outType, glslopt_precision* outPrec, int* outVecSize, int* outMatSize, int* outArraySize, int* outLocation);
+EXPORT_API int glslopt_shader_get_uniform_count (glslopt_shader* shader);
+EXPORT_API int glslopt_shader_get_uniform_total_size (glslopt_shader* shader);
+EXPORT_API void glslopt_shader_get_uniform_desc (glslopt_shader* shader, int index, const char** outName, glslopt_basic_type* outType, glslopt_precision* outPrec, int* outVecSize, int* outMatSize, int* outArraySize, int* outLocation);
+EXPORT_API int glslopt_shader_get_texture_count (glslopt_shader* shader);
+EXPORT_API void glslopt_shader_get_texture_desc (glslopt_shader* shader, int index, const char** outName, glslopt_basic_type* outType, glslopt_precision* outPrec, int* outVecSize, int* outMatSize, int* outArraySize, int* outLocation);
 
 // Get *very* approximate shader stats:
 // Number of math, texture and flow control instructions.
